@@ -1,0 +1,55 @@
+name: nextjs-cloud-run
+
+# This workflow is triggered on pushes to the repository.
+on:
+  push:
+    branches: main
+  pull_request:
+    branches: main
+
+env:
+  PROJECT_ID: ${{ secrets.CLOUD_RUN_PROJECT_NAME }}
+  REGION: us-east1
+  # project-name but it can be anything you want
+  REPO_NAME: deploy-nextjs-to-gcp-cloundrun-using-docker
+
+# Jobs will run in parallel
+jobs:
+  build-and-deploy:
+    name: Setup, Build, and Deploy
+    # This job runs on Linux
+    runs-on: ubuntu-latest
+    # Steps run synchronously (one after the other)
+    steps:
+      # Retrieve the codebase on the ubuntu machine.
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      # Authenticate with Google Cloud
+      - id: "auth"
+        uses: "google-github-actions/auth@v2"
+        with:
+          credentials_json: ${{ secrets.CLOUD_RUN_SERVICE_ACCOUNT }}
+
+      # Setup gcloud CLI/SDK
+      - name: Set up Cloud SDK
+        uses: google-github-actions/setup-gcloud@v0
+
+      - name: Authorize Docker push
+        run: gcloud auth configure-docker
+
+      - name: Build and tag the docker image
+        run: |-
+          docker build . --tag gcr.io/$PROJECT_ID/$REPO_NAME:$GITHUB_SHA
+
+      - name: Push the image to the Google Container Registry (GCR)
+        run: |-
+          docker push gcr.io/$PROJECT_ID/$REPO_NAME:$GITHUB_SHA
+
+      - name: Deploy
+        run: |-
+          gcloud run deploy $REPO_NAME \
+          --region $REGION \
+          --image gcr.io/$PROJECT_ID/$REPO_NAME:$GITHUB_SHA \
+          --platform "managed" \
+          --quiet
